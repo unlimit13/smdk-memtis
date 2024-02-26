@@ -368,6 +368,14 @@ static inline int page_try_share_anon_rmap(struct page *page)
 int folio_referenced(struct folio *, int is_locked,
 			struct mem_cgroup *memcg, unsigned long *vm_flags);
 
+//hjcho
+#ifdef CONFIG_HTMM
+int cooling_page(struct page *page, struct mem_cgroup *memcg);
+int page_check_hotness(struct page *page, struct mem_cgroup *memcg);
+int get_pginfo_idx(struct page *page);
+#endif
+//hjcho
+
 void try_to_migrate(struct folio *folio, enum ttu_flags flags);
 void try_to_unmap(struct folio *, enum ttu_flags flags);
 
@@ -438,9 +446,9 @@ int folio_mkclean(struct folio *);
 
 int pfn_mkclean_range(unsigned long pfn, unsigned long nr_pages, pgoff_t pgoff,
 		      struct vm_area_struct *vma);
-
+//hjcho
 void remove_migration_ptes(struct folio *src, struct folio *dst, bool locked);
-
+//hjcho
 int page_mapped_in_vma(struct page *page, struct vm_area_struct *vma);
 
 /*
@@ -497,6 +505,24 @@ static inline int folio_mkclean(struct folio *folio)
 	return 0;
 }
 #endif	/* CONFIG_MMU */
+
+//hjcho
+#ifdef CONFIG_HTMM
+static inline int cooling_page(struct page *page, struct mem_cgroup *memcg)
+{
+    return false;
+}
+
+static inline int page_check_hotness(struct page *page, struct mem_cgroup *memcg)
+{
+    return false;
+}
+static int get_pginfo_idx(struct page *page)
+{
+    return -1;
+}
+#endif
+//hjcho
 
 static inline int page_mkclean(struct page *page)
 {

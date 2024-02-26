@@ -253,6 +253,12 @@ static inline bool thp_migration_supported(void)
 	return IS_ENABLED(CONFIG_ARCH_ENABLE_THP_MIGRATION);
 }
 
+//hjcho
+#ifdef CONFIG_MEMCG
+extern struct deferred_split *get_deferred_split_queue(struct page *page);
+#endif
+//hjcho
+
 #else /* CONFIG_TRANSPARENT_HUGEPAGE */
 #define HPAGE_PMD_SHIFT ({ BUILD_BUG(); 0; })
 #define HPAGE_PMD_MASK ({ BUILD_BUG(); 0; })

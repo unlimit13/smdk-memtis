@@ -281,6 +281,10 @@ enum vmscan_throttle_state {
 
 #define for_each_evictable_lru(lru) for (lru = 0; lru <= LRU_ACTIVE_FILE; lru++)
 
+//hjcho
+#define for_each_active_lru(lru) for (lru = 1; lru <= LRU_ACTIVE_FILE; lru += 2)
+//hjcho
+
 static inline bool is_file_lru(enum lru_list lru)
 {
 	return (lru == LRU_INACTIVE_FILE || lru == LRU_ACTIVE_FILE);
@@ -1392,6 +1396,16 @@ typedef struct pglist_data {
 	struct deferred_split deferred_split_queue;
 #endif
 
+//hjcho
+#ifdef CONFIG_HTMM /* struct pglist_data */
+	struct cftype *memcg_htmm_file; /* max, terminate. */
+	struct task_struct  *kmigraterd;
+	struct list_head    kmigraterd_head;
+	spinlock_t	    kmigraterd_lock;
+	wait_queue_head_t   kmigraterd_wait;
+#endif
+//hjcho
+
 #ifdef CONFIG_NUMA_BALANCING
 	/* start time in ms of current promote rate limit period */
 	unsigned int nbp_rl_start;
@@ -1484,7 +1498,9 @@ static inline struct pglist_data *lruvec_pgdat(struct lruvec *lruvec)
 	return container_of(lruvec, struct pglist_data, __lruvec);
 #endif
 }
-
+//hjcho
+extern unsigned long lruvec_lru_size(struct lruvec *lruvec, enum lru_list lru, int zone_idx);
+//hjcho
 #ifdef CONFIG_HAVE_MEMORYLESS_NODES
 int local_memory_node(int node_id);
 #else

@@ -135,6 +135,12 @@ enum pageflags {
 #ifdef CONFIG_ARCH_USES_PG_ARCH_X
 	PG_arch_2,
 	PG_arch_3,
+//hjcho
+#endif
+#ifdef CONFIG_HTMM
+	PG_htmm,
+	PG_needsplit,
+//hjcho
 #endif
 	__NR_PAGEFLAGS,
 
@@ -588,6 +594,15 @@ SETPAGEFLAG(Young, young, PF_ANY)
 TESTCLEARFLAG(Young, young, PF_ANY)
 PAGEFLAG(Idle, idle, PF_ANY)
 #endif
+
+//hjcho
+#ifdef CONFIG_HTMM
+PAGEFLAG(Htmm, htmm, PF_ANY)
+
+PAGEFLAG(NeedSplit, needsplit, PF_HEAD)
+TESTCLEARFLAG(NeedSplit, needsplit, PF_HEAD)
+#endif
+//hjcho
 
 /*
  * PageReported() is used to track reported free pages within the Buddy

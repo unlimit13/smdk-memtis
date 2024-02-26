@@ -38,6 +38,9 @@
 #include <linux/sched/sysctl.h>
 #include <linux/memory-tiers.h>
 #include <linux/cleancache.h>
+//hjcho
+#include <linux/htmm.h>
+//hjcho
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -564,7 +567,20 @@ struct deferred_split *get_deferred_split_queue(struct folio *folio)
 	struct pglist_data *pgdat = NODE_DATA(folio_nid(folio));
 
 	if (memcg)
+//hjcho
+#ifdef CONFIG_HTMM
+	{
+		if (memcg->htmm_enabled) {
+			struct mem_cgroup_per_node *pn = memcg->nodeinfo[page_to_nid(page)];
+			return &pn->deferred_split_queue;
+		}
+		else
+		    return &memcg->deferred_split_queue;
+	}
+#else
+//hjcho
 		return &memcg->deferred_split_queue;
+#endif	
 	else
 		return &pgdat->deferred_split_queue;
 }
@@ -709,6 +725,14 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 		spin_unlock(vmf->ptl);
 		count_vm_event(THP_FAULT_ALLOC);
 		count_memcg_event_mm(vma->vm_mm, THP_FAULT_ALLOC);
+		//hjcho
+#ifdef CONFIG_HTMM
+		if (page != NULL && node_is_toptier(page_to_nid(page)))
+		    count_vm_events(HTMM_ALLOC_DRAM, HPAGE_PMD_NR);
+		else
+		    count_vm_events(HTMM_ALLOC_NVM, HPAGE_PMD_NR);
+#endif
+		//hjcho
 	}
 
 	return 0;
@@ -830,6 +854,9 @@ vm_fault_t do_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		count_vm_event(THP_FAULT_FALLBACK);
 		return VM_FAULT_FALLBACK;
 	}
+#ifdef CONFIG_HTMM
+	prep_transhuge_page_for_htmm(vma, &folio->page);
+#endif
 	return __do_huge_pmd_anonymous_page(vmf, &folio->page, gfp);
 }
 
@@ -1691,6 +1718,11 @@ int zap_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 
 		if (pmd_present(orig_pmd)) {
 			page = pmd_page(orig_pmd);
+		//hjcho
+#ifdef CONFIG_HTMM
+			uncharge_htmm_page(page, get_mem_cgroup_from_mm(vma->vm_mm));
+#endif
+		//hjcho
 			page_remove_rmap(page, vma, true);
 			VM_BUG_ON_PAGE(page_mapcount(page) < 0, page);
 			VM_BUG_ON_PAGE(!PageHead(page), page);
@@ -2254,7 +2286,44 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		pte++;
 	}
 	pte_unmap(pte - 1);
+//hjcho
+#ifdef CONFIG_HTMM
+	/* pginfo-s managed by the huge page should be copied into pte->pginfo*/
+	if (PageHtmm(&page[3])) {
+	    struct mem_cgroup *memcg = get_mem_cgroup_from_mm(mm);
+	    pte_t *pte = pte_offset_map(&_pmd, haddr);
+	
+	    SetPageHtmm(&page[0]);
 
+	    for (i = 0, addr = haddr; i < HPAGE_PMD_NR; i++, addr += PAGE_SIZE) {
+		pginfo_t *pte_pginfo, *tail_pginfo;
+
+		pte_pginfo = get_pginfo_from_pte(&pte[i]);
+		tail_pginfo = get_compound_pginfo(page, addr);
+		if (!pte_pginfo || !tail_pginfo) {
+		    printk("split - pginfo - none...\n");
+		    goto skip_copy_pginfo;
+		}
+
+		pte_pginfo->nr_accesses = tail_pginfo->nr_accesses;
+		pte_pginfo->total_accesses = tail_pginfo->total_accesses;
+		pte_pginfo->cooling_clock = tail_pginfo->cooling_clock;
+		
+		if (get_idx(pte_pginfo->total_accesses) >= (memcg->active_threshold - 1))
+		    SetPageActive(&page[i]);
+		else
+		    ClearPageActive(&page[i]);
+
+		spin_lock(&memcg->access_lock);
+		memcg->hotness_hg[get_idx(pte_pginfo->total_accesses)]++;
+		spin_unlock(&memcg->access_lock);
+		/* Htmm flag will be cleared later */
+		/* ClearPageHtmm(&page[i]); */
+	    }
+	}
+skip_copy_pginfo:
+#endif
+//hjcho
 	if (!pmd_migration)
 		page_remove_rmap(page, vma, true);
 	if (freeze)
@@ -2413,7 +2482,15 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 	 * Don't pass it around before clear_compound_head().
 	 */
 	struct folio *new_folio = (struct folio *)page_tail;
-
+//hjcho
+#ifdef CONFIG_HTMM
+	bool htmm_tail = PageHtmm(page_tail) ? true : false;
+	bool htmm_active_tail = PageHtmm(head) && PageActive(page_tail);
+#else
+	bool htmm_tail = false;
+	bool htmm_active_tail = false;
+#endif
+//hjcho
 	VM_BUG_ON_PAGE(atomic_read(&page_tail->_mapcount) != -1, page_tail);
 
 	/*
@@ -2444,12 +2521,26 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 			 (1L << PG_arch_2) |
 			 (1L << PG_arch_3) |
 #endif
+//hjcho
+#ifdef CONFIG_HTMM
+			// (1L << PG_htmm) |
+#endif
 			 (1L << PG_dirty) |
 			 LRU_GEN_MASK | LRU_REFS_MASK));
 
 	/* ->mapping in first and second tail page is replaced by other uses */
-	VM_BUG_ON_PAGE(tail > 2 && page_tail->mapping != TAIL_MAPPING,
-			page_tail);
+	//hjcho
+	//VM_BUG_ON_PAGE(tail > 2 && page_tail->mapping != TAIL_MAPPING,
+	//		page_tail);
+#ifdef CONFIG_HTMM
+	if (htmm_tail)
+	    clear_transhuge_pginfo(page_tail);
+	if (htmm_active_tail)
+	    SetPageActive(page_tail);
+	else
+	    ClearPageActive(page_tail);
+#endif
+	//hjcho
 	page_tail->mapping = head->mapping;
 	page_tail->index = head->index + tail;
 
@@ -2503,6 +2594,10 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 	struct address_space *swap_cache = NULL;
 	unsigned long offset = 0;
 	unsigned int nr = thp_nr_pages(head);
+	//hjcho
+	LIST_HEAD(pages_to_free);
+	int nr_pages_to_free = 0;
+	//hjcho
 	int i, nr_dropped = 0;
 
 	/* complete memcg works before add pages to LRU */
@@ -2541,6 +2636,11 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 					head + i, 0);
 		}
 	}
+//hjcho
+#ifdef CONFIG_HTMM
+	ClearPageHtmm(head);
+#endif
+//hjcho
 
 	ClearPageCompound(head);
 	unlock_page_lruvec(lruvec);

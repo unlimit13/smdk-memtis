@@ -99,7 +99,9 @@
 #include <linux/stackprotector.h>
 #include <linux/user_events.h>
 #include <linux/iommu.h>
-
+//hjcho
+#include <linux/htmm.h>
+//hjcho
 #include <asm/pgalloc.h>
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -1283,6 +1285,11 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	init_tlb_flush_pending(mm);
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
 	mm->pmd_huge_pte = NULL;
+//hjcho
+#endif
+#ifdef CONFIG_HTMM
+	htmm_mm_init(mm);
+//hjcho
 #endif
 	mm_init_uprobes_state(mm);
 	hugetlb_count_init(mm);
@@ -1319,6 +1326,11 @@ fail_cid:
 fail_nocontext:
 	mm_free_pgd(mm);
 fail_nopgd:
+//hjcho
+#ifdef CONFIG_HTMM
+	htmm_mm_exit(mm);
+#endif
+//hjcho
 	free_mm(mm);
 	return NULL;
 }
@@ -1345,6 +1357,11 @@ static inline void __mmput(struct mm_struct *mm)
 	uprobe_clear_state(mm);
 	exit_aio(mm);
 	ksm_exit(mm);
+//hjcho
+#ifdef CONFIG_HTMM
+	htmm_mm_exit(mm);
+#endif
+//hjcho
 	khugepaged_exit(mm); /* must run before exit_mmap */
 	exit_mmap(mm);
 	mm_put_huge_zero_page(mm);

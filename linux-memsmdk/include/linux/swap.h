@@ -422,6 +422,10 @@ extern unsigned long shrink_all_memory(unsigned long nr_pages);
 extern int vm_swappiness;
 long remove_mapping(struct address_space *mapping, struct folio *folio);
 
+//hjcho
+extern unsigned int move_pages_to_lru(struct lruvec *lruvec, struct list_head *list);
+//hjcho
+
 #ifdef CONFIG_NUMA
 extern int node_reclaim_mode;
 extern int sysctl_min_unmapped_ratio;

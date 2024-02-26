@@ -4188,7 +4188,11 @@ static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
 	int ret;
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
-	key = &cft->lockdep_key;
+	//hjcho
+	printk("cft name: %s\n", cft->name);
+	key = &(cft->lockdep_key);
+	//key = &cft->lockdep_key;
+	//hjcho
 #endif
 	kn = __kernfs_create_file(cgrp->kn, cgroup_file_name(cgrp, cft, name),
 				  cgroup_file_mode(cft),

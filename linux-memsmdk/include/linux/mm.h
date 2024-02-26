@@ -4037,6 +4037,11 @@ static inline int seal_check_future_write(int seals, struct vm_area_struct *vma)
 
 	return 0;
 }
+//hjcho
+#ifdef CONFIG_HTMM
+extern void free_pginfo_pte(struct page *pte);
+#endif
+//hjcho
 
 #ifdef CONFIG_ANON_VMA_NAME
 int madvise_set_anon_name(struct mm_struct *mm, unsigned long start,

@@ -827,6 +827,10 @@ asmlinkage long sys_move_pages(pid_t pid, unsigned long nr_pages,
 				int flags);
 asmlinkage long sys_rt_tgsigqueueinfo(pid_t tgid, pid_t  pid, int sig,
 		siginfo_t __user *uinfo);
+-/* CONFIG_HTMM */ //hjcho
+-asmlinkage long sys_htmm_start(pid_t pid, int node);
+-asmlinkage long sys_htmm_end(pid_t pid);
+-/***************/ //hjcho
 asmlinkage long sys_perf_event_open(
 		struct perf_event_attr __user *attr_uptr,
 		pid_t pid, int cpu, int group_fd, unsigned long flags);

@@ -169,4 +169,12 @@ static inline void unregister_memory_block_under_nodes(struct memory_block *mem_
 
 #define to_node(device) container_of(device, struct node, dev)
 
+//hjcho
+static inline bool node_is_toptier(int node)
+{
+    return node_state(node, N_CPU);
+}
+
+//hjcho
+
 #endif /* _LINUX_NODE_H_ */

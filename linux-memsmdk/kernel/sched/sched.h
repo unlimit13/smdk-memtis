@@ -1499,7 +1499,11 @@ static inline void assert_clock_updated(struct rq *rq)
 	 * The only reason for not seeing a clock update since the
 	 * last rq_pin_lock() is if we're currently skipping updates.
 	 */
+	//hjcho
+#ifndef CONFIG_HTMM /* for lock stat analysis */
 	SCHED_WARN_ON(rq->clock_update_flags < RQCF_ACT_SKIP);
+#endif
+	//hjcho
 }
 
 static inline u64 rq_clock(struct rq *rq)

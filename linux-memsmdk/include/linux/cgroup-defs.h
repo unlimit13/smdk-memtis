@@ -659,6 +659,11 @@ struct cftype {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lock_class_key	lockdep_key;
 #endif
+//hjcho
+#ifdef CONFIG_HTMM /* struct cftype */
+	int numa_node_id;
+#endif
+//hjcho
 };
 
 /*

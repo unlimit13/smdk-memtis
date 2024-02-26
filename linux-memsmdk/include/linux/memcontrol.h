@@ -128,7 +128,18 @@ struct mem_cgroup_per_node {
 	struct lruvec_stats			lruvec_stats;
 
 	unsigned long		lru_zone_size[MAX_NR_ZONES][NR_LRU_LISTS];
-
+//hjcho
+#ifdef CONFIG_HTMM /* struct mem_cgroup_per_node */ 
+	unsigned long		max_nr_base_pages; /* Set by "max_at_node" param */
+	struct list_head	kmigraterd_list;
+	bool			need_cooling;
+	bool			need_adjusting;
+	bool			need_adjusting_all;
+	bool			need_demotion;
+	struct deferred_split	deferred_split_queue;
+	struct list_head	deferred_list;
+#endif 
+//hjcho
 	struct mem_cgroup_reclaim_iter	iter;
 
 	struct shrinker_info __rcu	*shrinker_info;
@@ -328,6 +339,50 @@ struct mem_cgroup {
 	struct deferred_split deferred_split_queue;
 #endif
 
+//hjcho
+#ifdef CONFIG_HTMM /* struct mem_cgroup */
+	bool htmm_enabled;
+	unsigned long max_nr_dram_pages; /* the maximum number of pages */
+	unsigned long nr_active_pages; /* updated by need_lru_cooling() */
+	/* stat for sampled accesses */
+	unsigned long nr_sampled; /* the total number of sampled accesses */
+	unsigned long nr_sampled_for_split; /* nr_sampled for split decision */
+	unsigned long nr_dram_sampled; /* accesses to DRAM: n(i) */
+	unsigned long prev_dram_sampled; /* accesses to DRAM n(i-1) */
+	unsigned long max_dram_sampled; /* accesses to DRAM (estimated) */
+	unsigned long prev_max_dram_sampled; /* accesses to DRAM (estimated) */
+	unsigned long nr_max_sampled; /* the calibrated number of accesses to both DRAM and NVM */
+	/* thresholds */
+	unsigned int active_threshold; /* hot */
+	unsigned int warm_threshold;
+	unsigned int bp_active_threshold; /* expected threshold */
+	/* split */
+	unsigned int split_threshold;
+	unsigned int split_active_threshold;
+	unsigned int nr_split;
+	unsigned int nr_split_tail_idx;
+	/* used to calculated avg_samples_hp. see check_transhuge_cooling() */
+	unsigned int sum_util;
+	unsigned int num_util;
+	/*  */
+	unsigned long access_map[21];
+	/* histograms. exponential scale */
+	/* "hotness_map" is used to determine the hot page threshold.
+	 * "ebp_hotness_map" is used to accurately determine
+	 * the expected DRAM hit ratio when the system only uses 4KB (base) pages.
+	 */
+	unsigned long hotness_hg[16]; // page access histogram
+	unsigned long ebp_hotness_hg[16]; // expected bage page
+	/* lock for histogram */
+	spinlock_t access_lock;
+	/* etc */
+	bool cooled;
+	bool split_happen;
+	bool need_split;
+	unsigned int cooling_clock;
+	unsigned long nr_alloc;
+#endif /* CONFIG_HTMM */
+//hjcho
 #ifdef CONFIG_LRU_GEN
 	/* per-memcg mm_struct list */
 	struct lru_gen_mm_list mm_list;
@@ -1884,6 +1939,12 @@ static inline void count_objcg_event(struct obj_cgroup *objcg,
 }
 
 #endif /* CONFIG_MEMCG_KMEM */
+
+//hjcho
+#ifdef CONFIG_HTMM
+extern int mem_cgroup_per_node_htmm_init(void);
+#endif
+//hjcho
 
 #if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_ZSWAP)
 bool obj_cgroup_may_zswap(struct obj_cgroup *objcg);

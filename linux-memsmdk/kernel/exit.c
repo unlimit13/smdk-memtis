@@ -70,6 +70,12 @@
 #include <linux/sysfs.h>
 #include <linux/user_events.h>
 
+//hjcho
+#ifdef CONFIG_HTMM
+#include <linux/htmm.h>
+#endif
+//hjcho
+
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
 #include <asm/mmu_context.h>

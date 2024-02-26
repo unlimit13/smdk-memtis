@@ -229,4 +229,5 @@ void migrate_device_finalize(unsigned long *src_pfns,
 
 #endif /* CONFIG_MIGRATION */
 
+
 #endif /* _LINUX_MIGRATE_H */

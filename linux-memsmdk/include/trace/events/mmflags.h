@@ -97,6 +97,16 @@
 
 #define DEF_PAGEFLAG_NAME(_name) { 1UL <<  PG_##_name, __stringify(_name) }
 
+//hjcho
+#ifdef CONFIG_HTMM
+#define IF_HAVE_PG_HTMM(flag,string) ,{1UL << flag, string}
+#define IF_HAVE_PG_NEEDSPLIT(flag,string) ,{1UL << flag, string}
+#else
+#define IF_HAVE_PG_HTMM(flag,string)
+#define IF_HAVE_PG_NEEDSPLIT(flag,string)
+#endif
+//hjcho
+
 #define __def_pageflag_names						\
 	DEF_PAGEFLAG_NAME(locked),					\
 	DEF_PAGEFLAG_NAME(waiters),					\
@@ -125,8 +135,11 @@ IF_HAVE_PG_HWPOISON(hwpoison)						\
 IF_HAVE_PG_IDLE(idle)							\
 IF_HAVE_PG_IDLE(young)							\
 IF_HAVE_PG_ARCH_X(arch_2)						\
-IF_HAVE_PG_ARCH_X(arch_3)
-
+IF_HAVE_PG_ARCH_X(arch_3)						\
+IF_HAVE_PG_SKIP_KASAN_POISON(PG_skip_kasan_poison, "skip_kasan_poison")	\ 
+IF_HAVE_PG_HTMM(PG_htmm,		"htmm"		)		\
+IF_HAVE_PG_NEEDSPLIT(PG_needsplit,	"needsplit"	)
+//hjcho upper 3 lines
 #define show_page_flags(flags)						\
 	(flags) ? __print_flags(flags, "|",				\
 	__def_pageflag_names						\
