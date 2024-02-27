@@ -573,6 +573,7 @@ invalidate_complete_page2(struct address_space *mapping, struct page *page)
 
 	BUG_ON(page_has_private(page));
 	__delete_from_page_cache(page, NULL);
+	cleancache_invalidate_page(mapping, page); //hjcho ; origin -> folio->page
 	xa_unlock_irq(&mapping->i_pages);
 
 	if (mapping->a_ops->freepage)

@@ -35,7 +35,9 @@
 #include <linux/numa.h>
 #include <linux/page_owner.h>
 #include <linux/htmm.h>
-
+//hjcho
+#include <linux/cleancache.h>
+//hjcho
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
 #include "internal.h"
@@ -2516,6 +2518,7 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 			__delete_from_page_cache(head + i, NULL);
 			if (shmem_mapping(head->mapping))
 				shmem_uncharge(head->mapping->host, 1);
+			cleancache_invalidate_page(head->mapping, &head->page); //hjcho
 			put_page(head + i);
 		} else if (!PageAnon(page)) {
 			__xa_store(&head->mapping->i_pages, head[i].index,

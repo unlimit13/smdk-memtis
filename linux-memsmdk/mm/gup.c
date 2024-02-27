@@ -910,7 +910,7 @@ unmap:
  * is, *@locked will be set to 0 and -EBUSY returned.
  */
 static int faultin_page(struct vm_area_struct *vma,
-		unsigned long address, unsigned int *flags, int *locked)
+		unsigned long address, unsigned int *flags, bool unshare,int *locked)
 {
 	unsigned int fault_flags = 0;
 	vm_fault_t ret;
@@ -933,7 +933,17 @@ static int faultin_page(struct vm_area_struct *vma,
 		 */
 		fault_flags |= FAULT_FLAG_TRIED;
 	}
-
+	if (unshare) {
+		fault_flags |= FAULT_FLAG_UNSHARE;
+		/* FAULT_FLAG_WRITE and FAULT_FLAG_UNSHARE are incompatible */
+		VM_BUG_ON(fault_flags & FAULT_FLAG_WRITE);
+	}
+//hjcho
+#ifdef CONFIG_EXMEM
+	if (*flags & FOLL_NOSLOW)
+		fault_flags |= FAULT_FLAG_NOSLOW;
+#endif
+//hjcho
 	ret = handle_mm_fault(vma, address, fault_flags, NULL);
 	if (ret & VM_FAULT_ERROR) {
 		int err = vm_fault_to_errno(ret, *flags);
@@ -1155,7 +1165,7 @@ retry:
 
 		page = follow_page_mask(vma, start, foll_flags, &ctx);
 		if (!page) {
-			ret = faultin_page(vma, start, &foll_flags, locked);
+			ret = faultin_page(vma, start, &foll_flags,PTR_ERR(page) == -EMLINK, locked);
 			switch (ret) {
 			case 0:
 				goto retry;
@@ -1514,9 +1524,15 @@ long populate_vma_page_range(struct vm_area_struct *vma,
  * If @locked is non-NULL, it must held for read only and may be released.  If
  * it's released, *@locked will be set to 0.
  */
+//hjcho
+#ifdef CONFIG_EXMEM
+long faultin_vma_page_range(struct vm_area_struct *vma, unsigned long start,
+			    unsigned long end, bool write, bool noslow, int *locked)
+#else
 long faultin_vma_page_range(struct vm_area_struct *vma, unsigned long start,
 			    unsigned long end, bool write, int *locked)
-{
+#endif
+{ //hjcho
 	struct mm_struct *mm = vma->vm_mm;
 	unsigned long nr_pages = (end - start) / PAGE_SIZE;
 	int gup_flags;
@@ -1540,7 +1556,12 @@ long faultin_vma_page_range(struct vm_area_struct *vma, unsigned long start,
 	gup_flags = FOLL_TOUCH | FOLL_POPULATE | FOLL_MLOCK | FOLL_HWPOISON;
 	if (write)
 		gup_flags |= FOLL_WRITE;
-
+//hjcho
+#ifdef CONFIG_EXMEM
+	if (noslow)
+		gup_flags |= FOLL_NOSLOW;
+#endif
+//hjcho
 	/*
 	 * We want to report -EINVAL instead of -EFAULT for any permission
 	 * problems or incompatible mappings.

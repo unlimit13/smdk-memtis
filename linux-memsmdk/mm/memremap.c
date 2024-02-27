@@ -354,6 +354,9 @@ void *memremap_pages(struct dev_pagemap *pgmap, int nid)
 		break;
 	case MEMORY_DEVICE_GENERIC:
 		break;
+	case MEMORY_DEVICE_GENERIC_WCCACHE: //hjcho
+		params.pgprot = pgprot_writecombine(params.pgprot);
+		break; //hjcho
 	case MEMORY_DEVICE_PCI_P2PDMA:
 		params.pgprot = pgprot_noncached(params.pgprot);
 		break;

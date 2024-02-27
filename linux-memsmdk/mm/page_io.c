@@ -26,6 +26,8 @@
 #include <linux/uio.h>
 #include <linux/sched/task.h>
 
+//#include "swap.h" //hjcho
+
 void end_swap_bio_write(struct bio *bio)
 {
 	struct page *page = bio_first_page_all(bio);

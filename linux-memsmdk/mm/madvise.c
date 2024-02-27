@@ -53,7 +53,10 @@ static int madvise_need_mmap_write(int behavior)
 	case MADV_COLD:
 	case MADV_PAGEOUT:
 	case MADV_FREE:
-	case MADV_POPULATE_READ:
+	case MADV_POPULATE_READ: //hjcho
+#ifdef CONFIG_EXMEM
+	case MADV_TRY_POPULATE_WRITE:
+#endif //hjcho
 	case MADV_POPULATE_WRITE:
 		return 0;
 	default:
@@ -829,7 +832,15 @@ static long madvise_populate(struct vm_area_struct *vma,
 			     unsigned long start, unsigned long end,
 			     int behavior)
 {
+	//hjcho
+#ifdef CONFIG_EXMEM
+	const bool write = (behavior == MADV_POPULATE_WRITE ||
+			behavior == MADV_TRY_POPULATE_WRITE);
+	const bool noslow = behavior == MADV_TRY_POPULATE_WRITE;
+#else
 	const bool write = behavior == MADV_POPULATE_WRITE;
+#endif
+	//hjcho
 	struct mm_struct *mm = vma->vm_mm;
 	unsigned long tmp_end;
 	int locked = 1;
@@ -850,8 +861,15 @@ static long madvise_populate(struct vm_area_struct *vma,
 
 		tmp_end = min_t(unsigned long, end, vma->vm_end);
 		/* Populate (prefault) page tables readable/writable. */
+//hjcho
+#ifdef CONFIG_EXMEM
+		pages = faultin_vma_page_range(vma, start, tmp_end, write, noslow,
+					       &locked);
+#else
 		pages = faultin_vma_page_range(vma, start, tmp_end, write,
 					       &locked);
+#endif
+//hjcho
 		if (!locked) {
 			mmap_read_lock(mm);
 			locked = 1;
@@ -996,6 +1014,9 @@ madvise_vma(struct vm_area_struct *vma, struct vm_area_struct **prev,
 		return madvise_dontneed_free(vma, prev, start, end, behavior);
 	case MADV_POPULATE_READ:
 	case MADV_POPULATE_WRITE:
+#ifdef CONFIG_EXMEM
+	case MADV_TRY_POPULATE_WRITE: //hjcho
+#endif
 		return madvise_populate(vma, prev, start, end, behavior);
 	default:
 		return madvise_behavior(vma, prev, start, end, behavior);
@@ -1019,6 +1040,9 @@ madvise_behavior_valid(int behavior)
 	case MADV_PAGEOUT:
 	case MADV_POPULATE_READ:
 	case MADV_POPULATE_WRITE:
+#ifdef CONFIG_EXMEM
+	case MADV_TRY_POPULATE_WRITE: //hjcho
+#endif
 #ifdef CONFIG_KSM
 	case MADV_MERGEABLE:
 	case MADV_UNMERGEABLE:

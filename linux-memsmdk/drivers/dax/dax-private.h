@@ -52,9 +52,11 @@ struct dax_mapping {
  * @region - parent region
  * @dax_dev - core dax functionality
  * @target_node: effective numa node if dev_dax memory range is onlined
- * @id: ida allocated id
+ * @dyn_id: is this a dynamic or statically created instance
+ * @id: ida allocated id when the dax_region is not static
  * @ida: mapping id allocator
  * @dev - device core
+ * @nr_pgmap - number of @pgmap
  * @pgmap - pgmap for memmap setup / lifetime (driver owned)
  * @nr_range: size of @ranges
  * @ranges: resource-span + pgoff tuples for the instance
@@ -64,9 +66,11 @@ struct dev_dax {
 	struct dax_device *dax_dev;
 	unsigned int align;
 	int target_node;
+	bool dyn_id;
 	int id;
 	struct ida ida;
 	struct device dev;
+	int nr_pgmap;
 	struct dev_pagemap *pgmap;
 	int nr_range;
 	struct dev_dax_range {
@@ -75,6 +79,13 @@ struct dev_dax {
 		struct dax_mapping *mapping;
 	} *ranges;
 };
+
+/*
+ * While run_dax() is potentially a generic operation that could be
+ * defined in include/linux/dax.h we don't want to grow any users
+ * outside of drivers/dax/
+ */
+void run_dax(struct dax_device *dax_dev);
 
 static inline struct dev_dax *to_dev_dax(struct device *dev)
 {

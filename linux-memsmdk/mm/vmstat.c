@@ -1387,6 +1387,10 @@ const char * const vmstat_text[] = {
 	"swap_ra",
 	"swap_ra_hit",
 #endif
+#ifdef CONFIG_CXLSWAP //hjcho
+	"cxlswpin",
+	"cxlswpout",
+#endif //hjcho
 #ifdef CONFIG_X86
 	"direct_map_level2_splits",
 	"direct_map_level3_splits",
@@ -1454,8 +1458,24 @@ static void frag_show_print(struct seq_file *m, pg_data_t *pgdat,
 	int order;
 
 	seq_printf(m, "Node %d, zone %8s ", pgdat->node_id, zone->name);
-	for (order = 0; order < MAX_ORDER; ++order)
+	for (order = 0; order < MAX_ORDER; ++order)//{ hjcho
+#ifdef CONFIG_EXMEM
+		if (zone_has_subzone(zone)) {
+			unsigned long sum = 0, i;
+			for (i = 0; i < MAX_NR_SUBZONES; i++)
+				sum += data_race(zone->free_area_subzone[i][order].nr_free);
+			seq_printf(m, "%6lu ", sum);
+		} else {
+			/*
+			 * Access to nr_free is lockless as nr_free is used only for
+			 * printing purposes. Use data_race to avoid KCSAN warning.
+			 */
+			seq_printf(m, "%6lu ", data_race(zone->free_area[order].nr_free));
+		}
+#else
 		seq_printf(m, "%6lu ", zone->free_area[order].nr_free);
+#endif
+	//} hjcho
 	seq_putc(m, '\n');
 }
 
@@ -1484,7 +1504,44 @@ static void pagetypeinfo_showfree_print(struct seq_file *m,
 			struct free_area *area;
 			struct list_head *curr;
 			bool overflow = false;
+//hjcho
+#ifdef CONFIG_EXMEM
+			if (zone_has_subzone(zone)) {
+				unsigned int i, subzone_idx;
+				for (i = 0; i < zone->nr_subzones; i++) {
+					subzone_idx = zone->subzonelist[i].subzone_idx;
+					area = &(zone->free_area_subzone[subzone_idx][order]);
+					list_for_each(curr, &area->free_list[mtype]) {
+						if (++freecount >= 100000) {
+							overflow = true;
+							break;
+						}
+					}
 
+					if (overflow)
+						break;
+				}
+			} else {
+				area = &(zone->free_area[order]);
+
+				list_for_each(curr, &area->free_list[mtype]) {
+					/*
+					 * Cap the free_list iteration because it might
+					 * be really large and we are under a spinlock
+					 * so a long time spent here could trigger a
+					 * hard lockup detector. Anyway this is a
+					 * debugging tool so knowing there is a handful
+					 * of pages of this order should be more than
+					 * sufficient.
+					 */
+					if (++freecount >= 100000) {
+						overflow = true;
+						break;
+					}
+				}
+			}
+#else
+//hjcho
 			area = &(zone->free_area[order]);
 
 			list_for_each(curr, &area->free_list[mtype]) {
@@ -1502,6 +1559,7 @@ static void pagetypeinfo_showfree_print(struct seq_file *m,
 					break;
 				}
 			}
+#endif //hjcho
 			seq_printf(m, "%s%6lu ", overflow ? ">" : "", freecount);
 			spin_unlock_irq(&zone->lock);
 			cond_resched();

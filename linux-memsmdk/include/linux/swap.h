@@ -721,7 +721,16 @@ static inline int mem_cgroup_swappiness(struct mem_cgroup *mem)
 	return vm_swappiness;
 }
 #endif
-
+//hjcho
+#ifdef CONFIG_ZSWAP
+extern u64 zswap_pool_total_size;
+extern atomic_t zswap_stored_pages;
+#endif
+#ifdef CONFIG_CXLSWAP
+extern u64 cxlswap_pool_total_size;
+extern atomic_t cxlswap_stored_pages;
+#endif
+//hjcho
 #if defined(CONFIG_SWAP) && defined(CONFIG_MEMCG) && defined(CONFIG_BLK_CGROUP)
 extern void __cgroup_throttle_swaprate(struct page *page, gfp_t gfp_mask);
 static inline  void cgroup_throttle_swaprate(struct page *page, gfp_t gfp_mask)

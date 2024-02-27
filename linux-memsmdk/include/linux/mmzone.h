@@ -489,6 +489,31 @@ enum zone_type {
 
 #define ASYNC_AND_SYNC 2
 
+//hjcho
+#ifdef CONFIG_EXMEM
+#define MAX_NR_SUBZONES	MAX_NUMNODES
+
+#define subzone_idx(subzone)	((subzone) - (subzone)->zone_dat->subzones)
+
+struct subzone {
+	struct zone *zone_dat;
+	unsigned long start_pfn;
+	unsigned long end_pfn;
+};
+
+/*
+ * This struct contains information about a subzone in a subzonelist.
+ */
+struct subzoneref {
+	struct subzone *subzone;
+	int subzone_idx;
+};
+
+int add_subzone(int nid, u64 start, u64 end);
+int remove_subzone(int nid, u64 start, u64 end);
+#endif /* CONFIG_EXMEM */
+//hjcho
+
 struct zone {
 	/* Read-mostly fields */
 
@@ -624,7 +649,22 @@ struct zone {
 	 * drift allowing watermarks to be breached
 	 */
 	unsigned long percpu_drift_mark;
+//hjcho
+#ifdef CONFIG_EXMEM
+	struct free_area	*free_area_subzone[MAX_NR_SUBZONES];
+	struct subzone		*subzones;
+	nodemask_t			subzone_mask; // FIXME
 
+	/*
+	 * subzonelist contains references to all subzones in movable zone.
+	 * subzonelist SHOULD BE NULL-terminated.
+	 */
+	struct subzoneref	*subzonelist;
+	unsigned int		nr_subzones;
+
+	unsigned int		cur_subzone_idx;
+#endif
+//hjcho
 #if defined CONFIG_COMPACTION || defined CONFIG_CMA
 	/* pfn where compaction free scanner should start */
 	unsigned long		compact_cached_free_pfn;
@@ -993,6 +1033,41 @@ static inline bool zone_is_zone_device(struct zone *zone)
 	return false;
 }
 #endif
+
+//hjcho
+#ifdef CONFIG_EXMEM
+static inline bool zone_is_zone_movable(struct zone *zone)
+{
+	return unlikely(zone_idx(zone) == ZONE_MOVABLE);
+}
+
+static inline bool zone_has_subzone(struct zone *zone)
+{
+	return zone_is_zone_movable(zone) && unlikely(zone->nr_subzones > 0);
+}
+
+/**
+ * Returns the subzone_idx of the subzoneref that has passed the offset from
+ * the most recent page-allocated subzonelist index.
+ */
+static inline int get_next_subzone_id(struct zone *zone, unsigned int offset)
+{
+	unsigned int subzonelist_idx;
+	int subzone_idx;
+
+	subzonelist_idx = zone->cur_subzone_idx + offset;
+	if (subzonelist_idx >= zone->nr_subzones)
+		subzonelist_idx -= zone->nr_subzones;
+
+	subzone_idx = zone->subzonelist[subzonelist_idx].subzone_idx;
+
+	VM_BUG_ON(subzone_idx < 0);
+
+	return subzone_idx;
+}
+#endif
+
+//hjcho
 
 /*
  * Returns true if a zone has pages managed by the buddy allocator.

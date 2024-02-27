@@ -2044,6 +2044,13 @@ config PROFILING
 config TRACEPOINTS
 	bool
 
+config EXMEM
+	bool "Enable extended memory features (EXPERIMENTAL)"
+	help
+	  This enables experimental features for CXL heterogeneous memory system.
+	  1) memory tiering - using cxl memory as os-level swap/cache interface
+	  2) memory pooling - compose multiple memory-nodes as one, then interleaving
+	  3) dax/kmem-ext driver - additional knobs for CXL metadata and delivering an event of memory-node on/offline
 endmenu		# General setup
 
 source "arch/Kconfig"

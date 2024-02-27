@@ -23,8 +23,52 @@ enum {
 	MPOL_INTERLEAVE,
 	MPOL_LOCAL,
 	MPOL_PREFERRED_MANY,
+	MPOL_LEGACY,	/* set_mempolicy limited to above modes */ //hjcho
+	MPOL_PREFERRED_INTERLEAVE, //hjcho
+	MPOL_WEIGHTED_INTERLEAVE, //hjcho
 	MPOL_MAX,	/* always last member of enum */
 };
+
+//hjcho
+struct mempolicy_args {
+	unsigned short mode;
+	unsigned long *nodemask;
+	unsigned long maxnode;
+	unsigned short flags;
+	struct {
+		/* Memory allowed */
+		struct {
+			unsigned long maxnode;
+			unsigned long *nodemask;
+		} allowed;
+		/* Address information */
+		struct {
+			unsigned long addr;
+			unsigned long node;
+			unsigned short mode;
+			unsigned short flags;
+		} addr;
+		/* Interleave */
+	} get;
+	/* Mode specific settings */
+	union {
+		struct {
+			unsigned long next_node; /* get only */
+		} interleave;
+		/* Partial interleave */
+		struct {
+			unsigned long weight;  /* get and set */
+			unsigned long next_node; /* get only */
+		} pil;
+		/* Weighted interleave */
+		struct {
+			unsigned long next_node; /* get only */
+			unsigned char *weights; /* get and set */
+		} wil;
+	};
+};
+
+//hjcho
 
 /* Flags for set_mempolicy */
 #define MPOL_F_STATIC_NODES	(1 << 15)

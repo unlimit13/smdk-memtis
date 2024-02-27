@@ -75,6 +75,10 @@
 #define MADV_POPULATE_READ	22	/* populate (prefault) page tables readable */
 #define MADV_POPULATE_WRITE	23	/* populate (prefault) page tables writable */
 
+#ifdef CONFIG_EXMEM
+#define MADV_TRY_POPULATE_WRITE	26	/* try to populate (prefault) page tables writable */
+#endif
+
 /* compatibility flags */
 #define MAP_FILE	0
 

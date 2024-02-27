@@ -721,3 +721,13 @@ config PLDMFW
 
 config ASN1_ENCODER
        tristate
+
+config PNM_LIB
+	bool "PNM kernel library"
+	default n
+	help
+	  PNM common logic: allocator, scheduler, etc.
+	  Provides essential PNM functionality.
+	  Core PNM layer components: allocator, scheduler,
+	  process manager, etc. Gives utility helpers and
+	  a unified layer for various PNM devices.

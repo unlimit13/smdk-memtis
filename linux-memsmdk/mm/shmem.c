@@ -1194,7 +1194,7 @@ static int shmem_find_swap_entries(struct address_space *mapping,
 		if (swp_type(entry) != type)
 			continue;
 		if (frontswap &&
-		    !frontswap_test(swap_info[type], swp_offset(entry)))
+		    !__frontswap_test(swap_info[type], swp_offset(entry)))
 			continue;
 
 		indices[ret] = xas.xa_index;

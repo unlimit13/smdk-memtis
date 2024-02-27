@@ -29,6 +29,8 @@
 #include "../fs/internal.h"
 #include "blk.h"
 
+#include <linux/cleancache.h> //hjcho
+
 struct bdev_inode {
 	struct block_device bdev;
 	struct inode vfs_inode;

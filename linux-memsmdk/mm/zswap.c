@@ -125,6 +125,11 @@ static bool zswap_same_filled_pages_enabled = true;
 module_param_named(same_filled_pages_enabled, zswap_same_filled_pages_enabled,
 		   bool, 0644);
 
+/* Enable/disable handling non-same-value filled pages (enabled by default) */
+static bool zswap_non_same_filled_pages_enabled = true;
+module_param_named(non_same_filled_pages_enabled, zswap_non_same_filled_pages_enabled,
+                   bool, 0644);
+
 /*********************************
 * data structures
 **********************************/
@@ -1094,6 +1099,8 @@ static int zswap_frontswap_store(unsigned type, pgoff_t offset,
 	struct zswap_header zhdr = { .swpentry = swp_entry(type, offset) };
 	gfp_t gfp;
 
+	struct obj_cgroup *objcg = NULL; //hjcho
+
 	/* THP isn't supported */
 	if (PageTransHuge(page)) {
 		ret = -EINVAL;
@@ -1105,23 +1112,38 @@ static int zswap_frontswap_store(unsigned type, pgoff_t offset,
 		goto reject;
 	}
 
+	//hjcho
+    /*
+     * If this is a duplicate, it must be removed before attempting to store
+     * it, otherwise, if the store fails the old page won't be removed from
+     * the tree, and it might be written back overriding the new data.
+     */
+    spin_lock(&tree->lock);
+    dupentry = zswap_rb_search(&tree->rbroot, offset);
+    if (dupentry) {
+            zswap_duplicate_entry++;
+            zswap_invalidate_entry(tree, dupentry);
+	}
+
+    spin_unlock(&tree->lock);
+		//hjcho
+
+
+
 	/* reclaim space if needed */
 	if (zswap_is_full()) {
 		struct zswap_pool *pool;
 
 		zswap_pool_limit_hit++;
 		zswap_pool_reached_full = true;
-		pool = zswap_pool_last_get();
-		if (pool)
-			queue_work(shrink_wq, &pool->shrink_work);
-		ret = -ENOMEM;
-		goto reject;
+
+		goto shrink;
 	}
 
 	if (zswap_pool_reached_full) {
 	       if (!zswap_can_accept()) {
 			ret = -ENOMEM;
-			goto reject;
+			goto shrink;
 		} else
 			zswap_pool_reached_full = false;
 	}
@@ -1146,7 +1168,10 @@ static int zswap_frontswap_store(unsigned type, pgoff_t offset,
 		}
 		kunmap_atomic(src);
 	}
-
+	if (!zswap_non_same_filled_pages_enabled) {
+		ret = -EINVAL;
+ 		goto freepage;
+	}
 	/* if entry is successfully added, it keeps the reference */
 	entry->pool = zswap_pool_current_get();
 	if (!entry->pool) {
@@ -1238,6 +1263,12 @@ freepage:
 	zswap_entry_cache_free(entry);
 reject:
 	return ret;
+shrink:
+    pool = zswap_pool_last_get();
+    if (pool && !queue_work(shrink_wq, &pool->shrink_work))
+            zswap_pool_put(pool);
+    ret = -ENOMEM;
+    goto reject;
 }
 
 /*

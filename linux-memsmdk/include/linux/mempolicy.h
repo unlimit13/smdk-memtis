@@ -47,7 +47,23 @@ struct mempolicy {
 	unsigned short mode; 	/* See MPOL_* above */
 	unsigned short flags;	/* See set_mempolicy() MPOL_F_* above */
 	nodemask_t nodes;	/* interleave/bind/perfer */
+//hjcho
+	int home_node;		/* Home node to use for MPOL_BIND and MPOL_PREFERRED_MANY */
 
+	union {
+		/* Preferred Interleave: Weight local, then interleave */
+		struct {
+			int weight;
+			int count;
+		} pil;
+		/* weighted interleave */
+		struct {
+			unsigned int il_weight;
+			unsigned char cur_weight;
+			unsigned char weights[MAX_NUMNODES];
+		} wil;
+	};
+//hjcho
 	union {
 		nodemask_t cpuset_mems_allowed;	/* relative to these nodes */
 		nodemask_t user_nodemask;	/* nodemask passed by user */

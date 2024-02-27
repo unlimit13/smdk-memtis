@@ -137,6 +137,12 @@ enum vm_event_item { PGPGIN, PGPGOUT, PSWPIN, PSWPOUT,
 		SWAP_RA,
 		SWAP_RA_HIT,
 #endif
+//hjcho
+#ifdef CONFIG_CXLSWAP
+		CXLSWPIN,
+		CXLSWPOUT,
+#endif
+//hjcho
 #ifdef CONFIG_X86
 		DIRECT_MAP_LEVEL2_SPLIT,
 		DIRECT_MAP_LEVEL3_SPLIT,

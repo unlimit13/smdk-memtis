@@ -1959,7 +1959,7 @@ static int unuse_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 			continue;
 
 		offset = swp_offset(entry);
-		if (frontswap && !frontswap_test(si, offset))
+		if (frontswap && !__frontswap_test(si, offset))
 			continue;
 
 		pte_unmap(pte);
@@ -2138,7 +2138,7 @@ static unsigned int find_next_to_unuse(struct swap_info_struct *si,
 	for (i = prev + 1; i < si->max; i++) {
 		count = READ_ONCE(si->swap_map[i]);
 		if (count && swap_count(count) != SWAP_MAP_BAD)
-			if (!frontswap || frontswap_test(si, i))
+			if (!frontswap || __frontswap_test(si, i))
 				break;
 		if ((i % LATENCY_LIMIT) == 0)
 			cond_resched();

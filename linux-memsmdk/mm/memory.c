@@ -3772,7 +3772,18 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	/* Allocate our own private page. */
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
+//hjcho
+#ifdef CONFIG_EXMEM
+	if (vmf->flags & FAULT_FLAG_NOSLOW) {
+		gfp_t gfp = (GFP_HIGHUSER_MOVABLE | __GFP_ZERO | __GFP_NOWARN |
+			__GFP_NOMEMALLOC) & ~(__GFP_RECLAIM | __GFP_NOFAIL);
+		page = alloc_page_vma(gfp,vma, vmf->address);
+	} else
+		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+#else
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+#endif
+//hjcho - modification
 	if (!page)
 		goto oom;
 

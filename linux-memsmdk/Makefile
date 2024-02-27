@@ -2,7 +2,7 @@
 VERSION = 5
 PATCHLEVEL = 15
 SUBLEVEL = 19
-EXTRAVERSION = -htmm
+EXTRAVERSION = -htmm+smdk
 NAME = Trick or Treat
 
 # *DOCUMENTATION*

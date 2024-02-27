@@ -304,6 +304,7 @@ extern int offline_pages(unsigned long start_pfn, unsigned long nr_pages,
 extern int remove_memory(u64 start, u64 size);
 extern void __remove_memory(u64 start, u64 size);
 extern int offline_and_remove_memory(u64 start, u64 size);
+extern void online_movable_memory(u64 start, u64 size); //hjcho
 
 #else
 static inline void try_offline_node(int nid) {}

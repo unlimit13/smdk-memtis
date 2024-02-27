@@ -2369,4 +2369,23 @@ int offline_and_remove_memory(u64 start, u64 size)
 	return rc;
 }
 EXPORT_SYMBOL_GPL(offline_and_remove_memory);
+
+//hjcho
+static int online_movable_memory_block(struct memory_block *mem, void *arg)
+{
+	mem->online_type = MMOP_ONLINE_MOVABLE;
+
+	return device_online(&mem->dev);
+}
+
+void online_movable_memory(u64 start, u64 size)
+{
+	lock_device_hotplug();
+
+	walk_memory_blocks(start, size, NULL, online_movable_memory_block);
+
+	unlock_device_hotplug();
+}
+EXPORT_SYMBOL_GPL(online_movable_memory);
+//hjcho
 #endif /* CONFIG_MEMORY_HOTREMOVE */

@@ -477,6 +477,12 @@ enum fault_flag {
 	FAULT_FLAG_REMOTE =		1 << 7,
 	FAULT_FLAG_INSTRUCTION =	1 << 8,
 	FAULT_FLAG_INTERRUPTIBLE =	1 << 9,
+	FAULT_FLAG_UNSHARE =		1 << 10,
+	FAULT_FLAG_ORIG_PTE_VALID =	1 << 11,
+	FAULT_FLAG_VMA_LOCK =		1 << 12, //hjcho
+#ifdef CONFIG_EXMEM
+	FAULT_FLAG_NOSLOW =		1 << 13, //hjcho
+#endif
 };
 
 /*
@@ -505,7 +511,13 @@ static inline bool fault_flag_allow_retry_first(enum fault_flag flags)
 	return (flags & FAULT_FLAG_ALLOW_RETRY) &&
 	    (!(flags & FAULT_FLAG_TRIED));
 }
-
+//hjcho
+#ifdef CONFIG_EXMEM
+#define IF_HAVE_FAULT_FLAG_NOSLOW(flag,name) ,{flag, name}
+#else
+#define IF_HAVE_FAULT_FLAG_NOSLOW(flag,name)
+#endif
+//hjcho
 #define FAULT_FLAG_TRACE \
 	{ FAULT_FLAG_WRITE,		"WRITE" }, \
 	{ FAULT_FLAG_MKWRITE,		"MKWRITE" }, \
@@ -516,8 +528,10 @@ static inline bool fault_flag_allow_retry_first(enum fault_flag flags)
 	{ FAULT_FLAG_USER,		"USER" }, \
 	{ FAULT_FLAG_REMOTE,		"REMOTE" }, \
 	{ FAULT_FLAG_INSTRUCTION,	"INSTRUCTION" }, \
-	{ FAULT_FLAG_INTERRUPTIBLE,	"INTERRUPTIBLE" }
-
+	{ FAULT_FLAG_INTERRUPTIBLE,	"INTERRUPTIBLE" }, \
+	{ FAULT_FLAG_VMA_LOCK,		"VMA_LOCK" } \
+IF_HAVE_FAULT_FLAG_NOSLOW(FAULT_FLAG_NOSLOW,	"NOSLOW") \
+//hjcho upper 3 line
 /*
  * vm_fault is filled by the pagefault handler and passed to the vma's
  * ->fault function. The vma's ->fault is responsible for returning a bitmask
@@ -2872,6 +2886,13 @@ struct page *follow_page(struct vm_area_struct *vma, unsigned long address,
 #define FOLL_PIN	0x40000	/* pages must be released via unpin_user_page */
 #define FOLL_FAST_ONLY	0x80000	/* gup_fast: prevent fall-back to slow gup */
 
+//hjcho
+#ifdef CONFIG_EXMEM
+	/* don't enter slow allocator path */
+#define FOLL_NOSLOW	0x100000
+#endif
+
+//hjcho
 /*
  * FOLL_PIN and FOLL_LONGTERM may be used in various combinations with each
  * other. Here is what they mean, and how to use them:

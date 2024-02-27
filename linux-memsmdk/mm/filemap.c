@@ -157,7 +157,7 @@ static void unaccount_page_cache_page(struct address_space *mapping,
 	 * invalidate any existing cleancache entries.  We can't leave
 	 * stale data around in the cleancache once our page is gone
 	 */
-	if (PageUptodate(page) && PageMappedToDisk(page))
+	if (PageUptodate(page) && PageMappedToDisk(page) && !PageHWPoison(page))
 		cleancache_put_page(page);
 	else
 		cleancache_invalidate_page(mapping, page);
@@ -347,6 +347,7 @@ void delete_from_page_cache_batch(struct address_space *mapping,
 		unaccount_page_cache_page(mapping, pvec->pages[i]);
 	}
 	page_cache_delete_batch(mapping, pvec);
+	cleancache_invalidate_inode(mapping); //hjcho
 	xa_unlock_irq(&mapping->i_pages);
 
 	for (i = 0; i < pagevec_count(pvec); i++)

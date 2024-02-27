@@ -959,12 +959,264 @@ compaction_capture(struct capture_control *capc, struct page *page,
 }
 #endif /* CONFIG_COMPACTION */
 
+//hjcho 
+#ifdef CONFIG_EXMEM
+/**
+ * for_each_subzone - helper macro to iterate over subzones in a given zone
+ */
+#define for_each_subzone(index, subzone_idx, zone)		\
+	for (index = 1, subzone_idx = get_next_subzone_id(zone, index);	\
+		index <= zone->nr_subzones;	\
+		subzone_idx = get_next_subzone_id(zone, ++index))
+
+static void free_subzone_mem(struct zone *zone)
+{
+	int i;
+
+	if (!zone || !zone_is_zone_movable(zone)) {
+		pr_err("Invalid zone: null or not movable\n");
+		return;
+	}
+
+	for (i = 0; i < MAX_NR_SUBZONES; i++) {
+		if (zone->free_area_subzone[i]) {
+			kfree(zone->free_area_subzone[i]);
+			zone->free_area_subzone[i] = NULL;
+		}
+	}
+
+	if (zone->subzones) {
+		kfree(zone->subzones);
+		zone->subzones = NULL;
+	}
+
+	if (zone->subzonelist) {
+		kfree(zone->subzonelist);
+		zone->subzonelist = NULL;
+	}
+}
+
+static int alloc_subzone_mem(struct zone *zone)
+{
+	int i;
+
+	if (!zone || !zone_is_zone_movable(zone)) {
+		pr_err("Invalid zone: null or not movable\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < MAX_NR_SUBZONES; i++) {
+		if (!zone->free_area_subzone[i]) {
+			zone->free_area_subzone[i] =
+				kzalloc(sizeof(struct free_area) * (MAX_ORDER + 1), GFP_ATOMIC);
+			if (!zone->free_area_subzone[i])
+				goto alloc_failed;
+		}
+	}
+
+	if (!zone->subzones) {
+		zone->subzones = kzalloc(sizeof(struct subzone) * MAX_NR_SUBZONES,
+				GFP_ATOMIC);
+		if (!zone->subzones)
+			goto alloc_failed;
+	}
+
+	if (!zone->subzonelist) {
+		zone->subzonelist =
+			kzalloc(sizeof(struct subzoneref) * (MAX_NR_SUBZONES + 1),
+					GFP_ATOMIC);
+		if (!zone->subzonelist)
+			goto alloc_failed;
+	}
+
+	return 0;
+
+alloc_failed:
+	free_subzone_mem(zone);
+	return -ENOMEM;
+}
+
+static inline int get_subzone_id(struct zone *zone, unsigned long pfn)
+{
+	int i = 0;
+	struct subzoneref *ref;
+
+	for (i = 0; i < zone->nr_subzones; i++) {
+		ref = &(zone->subzonelist[i]);
+		if (ref->subzone->start_pfn <= pfn && pfn < ref->subzone->end_pfn)
+			return ref->subzone_idx;
+	}
+
+	return -1;
+}
+
+static inline void subzoneref_set_subzone(struct subzone *subzone,
+		struct subzoneref *subzoneref)
+{
+	subzoneref->subzone = subzone;
+	subzoneref->subzone_idx = subzone_idx(subzone);
+}
+
+/*
+ * Build zone->subzonelist with zone->subzones and zone->subzone_mask.
+ */
+int build_subzonelist(struct zone *zone)
+{
+	int i = 0;
+	struct subzoneref *subzoneref;
+
+	subzoneref = zone->subzonelist;
+	for (i = 0; i < MAX_NR_SUBZONES; i++) {
+		if (!node_isset(i, zone->subzone_mask))
+			continue;
+
+		subzoneref_set_subzone(&zone->subzones[i], subzoneref);
+		subzoneref++;
+	}
+	subzoneref->subzone = NULL;
+	subzoneref->subzone_idx = 0;
+
+	pr_info("subzone lists: \n");
+	subzoneref = zone->subzonelist;
+	while (subzoneref->subzone) {
+		pr_info("  #%d: [%#010lx - %#010lx]\n", subzoneref->subzone_idx,
+				subzoneref->subzone->start_pfn, subzoneref->subzone->end_pfn);
+		subzoneref++;
+	}
+
+	return 0;
+}
+
+int remove_subzone(int nid, u64 start, u64 end)
+{
+	struct zone *zone;
+	int subzone_id;
+	unsigned long flags;
+
+	if (nid < 0)
+		return -1;
+
+	zone = &(NODE_DATA(nid)->node_zones[ZONE_MOVABLE]);
+	if (!zone)
+		return -1;
+
+	spin_lock_irqsave(&zone->lock, flags);
+
+	subzone_id = get_subzone_id(zone, start >> PAGE_SHIFT);
+	if (subzone_id < 0) {
+		spin_unlock_irqrestore(&zone->lock, flags);
+		return -1;
+	}
+
+	zone->subzones[subzone_id].zone_dat = NULL;
+	zone->subzones[subzone_id].start_pfn = 0;
+	zone->subzones[subzone_id].end_pfn = 0;
+	node_clear(subzone_id, zone->subzone_mask); // FIXME
+	zone->nr_subzones--;
+
+	if (build_subzonelist(zone)) {
+		spin_unlock_irqrestore(&zone->lock, flags);
+		return -1;
+	}
+
+	if (zone->nr_subzones == 0)
+		free_subzone_mem(zone);
+
+	spin_unlock_irqrestore(&zone->lock, flags);
+	return 0;
+}
+EXPORT_SYMBOL(remove_subzone);
+
+int add_subzone(int nid, u64 start, u64 end)
+{
+	struct zone *zone;
+	int i = 0, subzone_id = -1;
+	unsigned long flags;
+
+	if (nid < 0)
+		return -1;
+
+	if (!node_online(nid)) {
+		pr_info("subzone: node %d is offline, try online node.\n", nid);
+		if (try_online_node(nid) < 0) {
+			pr_err("subzone: failed to online node %d\n", nid);
+			return -1;
+		}
+	}
+
+	zone = &(NODE_DATA(nid)->node_zones[ZONE_MOVABLE]);
+	if (!zone) {
+		pr_err("zone is null\n");
+		return -1;
+	}
+
+	spin_lock_irqsave(&zone->lock, flags);
+
+	if (zone->nr_subzones >= MAX_NR_SUBZONES) {
+		spin_unlock_irqrestore(&zone->lock, flags);
+		pr_err("subzone is full\n");
+		return -1;
+	}
+
+	if (zone->nr_subzones == 0) {
+		if (alloc_subzone_mem(zone)) {
+			spin_unlock_irqrestore(&zone->lock, flags);
+			pr_err("Failed to alloc struct subzone.\n");
+			return -ENOMEM;
+		}
+	}
+
+	/* Find empty slot */
+	for (i = 0; i < MAX_NR_SUBZONES; i++) {
+		if (!node_isset(i, zone->subzone_mask)) {
+			subzone_id = i;
+			break;
+		}
+	}
+
+	/* Set zone->subzones */
+	zone->subzones[subzone_id].zone_dat = zone;
+	zone->subzones[subzone_id].start_pfn = start >> PAGE_SHIFT;
+	zone->subzones[subzone_id].end_pfn = PAGE_ALIGN(end) >> PAGE_SHIFT;
+
+	/* Set zone->subzone_mask */
+	node_set(subzone_id, zone->subzone_mask); // FIXME
+
+	/* Set zone->nr_subzones */
+	zone->nr_subzones++;
+
+	pr_info("subzone count: %d\n", zone->nr_subzones);
+
+	if (build_subzonelist(zone)) {
+		spin_unlock_irqrestore(&zone->lock, flags);
+		return -1;
+	}
+
+	spin_unlock_irqrestore(&zone->lock, flags);
+	return 0;
+}
+EXPORT_SYMBOL(add_subzone);
+#endif /* CONFIG_EXMEM */
+
+//hjcho
 /* Used for pages not on another list */
 static inline void add_to_free_list(struct page *page, struct zone *zone,
 				    unsigned int order, int migratetype)
 {
-	struct free_area *area = &zone->free_area[order];
+//hjcho
+#ifdef CONFIG_EXMEM
+	struct free_area *area;
+	int subzone_id;
 
+	if (zone_has_subzone(zone)) {
+		subzone_id = get_subzone_id(zone, page_to_pfn(page));
+		area = &zone->free_area_subzone[subzone_id][order];
+	} else
+		area = &zone->free_area[order];
+#else
+ 	struct free_area *area = &zone->free_area[order];
+#endif
+//hjcho
 	list_add(&page->lru, &area->free_list[migratetype]);
 	area->nr_free++;
 }
@@ -973,8 +1225,20 @@ static inline void add_to_free_list(struct page *page, struct zone *zone,
 static inline void add_to_free_list_tail(struct page *page, struct zone *zone,
 					 unsigned int order, int migratetype)
 {
-	struct free_area *area = &zone->free_area[order];
+	//hjcho
+#ifdef CONFIG_EXMEM
+	struct free_area *area;
+	int subzone_id;
 
+	if (zone_has_subzone(zone)) {
+		subzone_id = get_subzone_id(zone, page_to_pfn(page));
+		area = &zone->free_area_subzone[subzone_id][order];
+	} else
+		area = &zone->free_area[order];
+#else
+ 	struct free_area *area = &zone->free_area[order];
+#endif
+//hjcho
 	list_add_tail(&page->lru, &area->free_list[migratetype]);
 	area->nr_free++;
 }
@@ -987,7 +1251,20 @@ static inline void add_to_free_list_tail(struct page *page, struct zone *zone,
 static inline void move_to_free_list(struct page *page, struct zone *zone,
 				     unsigned int order, int migratetype)
 {
-	struct free_area *area = &zone->free_area[order];
+//hjcho
+#ifdef CONFIG_EXMEM
+	struct free_area *area;
+	int subzone_id;
+
+	if (zone_has_subzone(zone)) {
+		subzone_id = get_subzone_id(zone, page_to_pfn(page));
+		area = &zone->free_area_subzone[subzone_id][order];
+	} else
+		area = &zone->free_area[order];
+#else
+ 	struct free_area *area = &zone->free_area[order];
+#endif
+//hjcho
 
 	list_move_tail(&page->lru, &area->free_list[migratetype]);
 }
@@ -1002,7 +1279,17 @@ static inline void del_page_from_free_list(struct page *page, struct zone *zone,
 	list_del(&page->lru);
 	__ClearPageBuddy(page);
 	set_page_private(page, 0);
-	zone->free_area[order].nr_free--;
+//hjcho
+#ifdef CONFIG_EXMEM
+	if (zone_has_subzone(zone)) {
+		int subzone_id = get_subzone_id(zone, page_to_pfn(page));
+		zone->free_area_subzone[subzone_id][order].nr_free--;
+	} else
+		zone->free_area[order].nr_free--;
+#else
+ 	zone->free_area[order].nr_free--;
+#endif
+//hjcho
 }
 
 /*
@@ -2460,6 +2747,46 @@ struct page *__rmqueue_smallest(struct zone *zone, unsigned int order,
 	struct free_area *area;
 	struct page *page;
 
+//hjcho
+#ifdef CONFIG_EXMEM
+	if (zone_has_subzone(zone)) {
+		unsigned int i, subzone_idx;
+		for_each_subzone(i, subzone_idx, zone) {
+			/* Find a page of the appropriate size in the preferred list */
+			for (current_order = order; current_order <= MAX_ORDER; ++current_order) {
+				area = &(zone->free_area_subzone[subzone_idx][current_order]);
+				page = get_page_from_free_area(area, migratetype);
+				if (!page)
+					continue;
+				del_page_from_free_list(page, zone, current_order);
+				expand(zone, page, order, current_order, migratetype);
+				set_pcppage_migratetype(page, migratetype);
+
+				/* Save current subzonelist index to a given zone */
+				zone->cur_subzone_idx += i;
+				if (zone->cur_subzone_idx >= zone->nr_subzones)
+					zone->cur_subzone_idx -= zone->nr_subzones;
+
+				trace_mm_page_alloc_zone_locked(page, order, migratetype); //hjcho
+				return page;
+			}
+		}
+	} else {
+		/* Find a page of the appropriate size in the preferred list */
+		for (current_order = order; current_order <= MAX_ORDER; ++current_order) {
+			area = &(zone->free_area[current_order]);
+			page = get_page_from_free_area(area, migratetype);
+			if (!page)
+				continue;
+			del_page_from_free_list(page, zone, current_order); //hjcho
+			expand(zone, page, order, current_order, migratetype);
+			set_pcppage_migratetype(page, migratetype);
+			trace_mm_page_alloc_zone_locked(page, order, migratetype); //hjcho
+			return page;
+		}
+	}
+#else
+
 	/* Find a page of the appropriate size in the preferred list */
 	for (current_order = order; current_order < MAX_ORDER; ++current_order) {
 		area = &(zone->free_area[current_order]);
@@ -2471,7 +2798,8 @@ struct page *__rmqueue_smallest(struct zone *zone, unsigned int order,
 		set_pcppage_migratetype(page, migratetype);
 		return page;
 	}
-
+#endif
+//hjcho
 	return NULL;
 }
 
@@ -2838,7 +3166,18 @@ static bool unreserve_highatomic_pageblock(const struct alloc_context *ac,
 
 		spin_lock_irqsave(&zone->lock, flags);
 		for (order = 0; order < MAX_ORDER; order++) {
-			struct free_area *area = &(zone->free_area[order]);
+//hjcho
+#ifdef CONFIG_EXMEM
+			struct free_area *area;
+			if (zone_has_subzone(zone)) {
+				int subzone_id = get_next_subzone_id(zone, 1);
+				area = &(zone->free_area_subzone[subzone_id][order]);
+			} else
+				area = &(zone->free_area[order]);
+#else
+ 			struct free_area *area = &(zone->free_area[order]);
+#endif
+//hjcho
 
 			page = get_page_from_free_area(area, MIGRATE_HIGHATOMIC);
 			if (!page)
@@ -2923,7 +3262,18 @@ __rmqueue_fallback(struct zone *zone, int order, int start_migratetype,
 	 */
 	for (current_order = MAX_ORDER - 1; current_order >= min_order;
 				--current_order) {
-		area = &(zone->free_area[current_order]);
+//hjcho					
+#ifdef CONFIG_EXMEM
+		if (zone_has_subzone(zone)) {
+			int subzone_id = get_next_subzone_id(zone, 1);
+			area = &(zone->free_area_subzone[subzone_id][current_order]);
+		} else
+			area = &(zone->free_area[current_order]);
+#else
+ 		area = &(zone->free_area[current_order]);
+#endif
+//hjcho
+
 		fallback_mt = find_suitable_fallback(area, current_order,
 				start_migratetype, false, &can_steal);
 		if (fallback_mt == -1)
@@ -2949,7 +3299,17 @@ __rmqueue_fallback(struct zone *zone, int order, int start_migratetype,
 find_smallest:
 	for (current_order = order; current_order < MAX_ORDER;
 							current_order++) {
-		area = &(zone->free_area[current_order]);
+//hjcho
+#ifdef CONFIG_EXMEM
+		if (zone_has_subzone(zone)) {
+			int subzone_id = get_next_subzone_id(zone, 1);
+			area = &(zone->free_area_subzone[subzone_id][current_order]);
+		} else
+			area = &(zone->free_area[current_order]);
+#else
+ 		area = &(zone->free_area[current_order]);
+#endif
+//hjcho
 		fallback_mt = find_suitable_fallback(area, current_order,
 				start_migratetype, false, &can_steal);
 		if (fallback_mt != -1)
@@ -3845,7 +4205,34 @@ static inline long __zone_watermark_unusable_free(struct zone *z,
 
 	return unusable_free;
 }
+//hjcho
+static inline bool __check_suitable_free_page(struct free_area *area,
+		unsigned int alloc_flags)
+{
+	int mt;
 
+	if (!area->nr_free)
+		return false;
+
+	for (mt = 0; mt < MIGRATE_PCPTYPES; mt++) {
+		if (!free_area_empty(area, mt))
+			return true;
+	}
+
+#ifdef CONFIG_CMA
+	if ((alloc_flags & ALLOC_CMA) &&
+		!free_area_empty(area, MIGRATE_CMA)) {
+		return true;
+	}
+#endif
+	if ((alloc_flags & (ALLOC_HIGHATOMIC|ALLOC_OOM)) &&
+	    !free_area_empty(area, MIGRATE_HIGHATOMIC)) {
+		return true;
+	}
+
+	return false;
+}
+//hjcho
 /*
  * Return true if free base pages are above 'mark'. For high-order checks it
  * will return true of the order-0 watermark is reached and there is at least
@@ -3890,29 +4277,38 @@ bool __zone_watermark_ok(struct zone *z, unsigned int order, unsigned long mark,
 	/* If this is an order-0 request then the watermark is fine */
 	if (!order)
 		return true;
-
-	/* For a high-order request, check at least one suitable page is free */
-	for (o = order; o < MAX_ORDER; o++) {
-		struct free_area *area = &z->free_area[o];
-		int mt;
-
-		if (!area->nr_free)
-			continue;
-
-		for (mt = 0; mt < MIGRATE_PCPTYPES; mt++) {
-			if (!free_area_empty(area, mt))
+//hjcho
+#ifdef CONFIG_EXMEM
+	if (zone_has_subzone(z)) {
+		unsigned int i = 0, subzone_idx;
+		for_each_subzone(i, subzone_idx, z) {
+			for (o = order; o <= MAX_ORDER; o++) {
+				struct free_area *area = &z->free_area_subzone[subzone_idx][o];
+				if (__check_suitable_free_page(area, alloc_flags))
+					return true;
+			}
+		}
+	} else {
+		/* For a high-order request, check at least one suitable page is free */
+		for (o = order; o <= MAX_ORDER; o++) {
+			struct free_area *area = &z->free_area[o];
+			if (__check_suitable_free_page(area, alloc_flags))
 				return true;
 		}
-
-#ifdef CONFIG_CMA
-		if ((alloc_flags & ALLOC_CMA) &&
-		    !free_area_empty(area, MIGRATE_CMA)) {
-			return true;
-		}
-#endif
-		if (alloc_harder && !free_area_empty(area, MIGRATE_HIGHATOMIC))
+	}
+#else
+//hjcho
+	/* For a high-order request, check at least one suitable page is free */
+	for (o = order; o <= MAX_ORDER; o++) {
+		struct free_area *area = &z->free_area[o];
+		if (__check_suitable_free_page(area, alloc_flags))
 			return true;
 	}
+
+#endif
+	/*if (alloc_harder && !free_area_empty(area, MIGRATE_HIGHATOMIC))
+		return true;*/
+	
 	return false;
 }
 
@@ -6051,9 +6447,21 @@ void show_free_areas(unsigned int filter, nodemask_t *nodemask)
 
 		spin_lock_irqsave(&zone->lock, flags);
 		for (order = 0; order < MAX_ORDER; order++) {
+//hjcho
+#ifdef CONFIG_EXMEM
+			struct free_area *area;
+			int type, subzone_id;
+
+			if (zone_has_subzone(zone)) {
+				subzone_id = get_next_subzone_id(zone, 1);
+				area = &(zone->free_area_subzone[subzone_id][order]);
+			} else
+				area = &zone->free_area[order];
+#else
 			struct free_area *area = &zone->free_area[order];
 			int type;
-
+#endif
+//hjcho
 			nr[order] = area->nr_free;
 			total += nr[order] << order;
 
@@ -6641,6 +7049,17 @@ static void __meminit zone_init_free_lists(struct zone *zone)
 		INIT_LIST_HEAD(&zone->free_area[order].free_list[t]);
 		zone->free_area[order].nr_free = 0;
 	}
+//hjcho
+#ifdef CONFIG_EXMEM
+		if (zone_has_subzone(zone)) {
+			unsigned int i = 0;
+			for (i = 0; i < MAX_NR_SUBZONES; i++) {
+				INIT_LIST_HEAD(&zone->free_area_subzone[i][order].free_list[t]);
+				zone->free_area_subzone[i][order].nr_free = 0;
+			}
+		}
+#endif
+//hjcho
 }
 
 /*

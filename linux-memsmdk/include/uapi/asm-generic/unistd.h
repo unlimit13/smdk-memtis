@@ -880,8 +880,16 @@ __SYSCALL(__NR_memfd_secret, sys_memfd_secret)
 #define __NR_process_mrelease 448
 __SYSCALL(__NR_process_mrelease, sys_process_mrelease)
 
+/* CONFIG_MMU only */ //hjcho
+#ifndef __ARCH_NOMMU
+#define __NR_set_mempolicy 449
+__SYSCALL(__NR_set_mempolicy2, sys_set_mempolicy2)
+#define __NR_get_mempolicy 450
+__SYSCALL(__NR_get_mempolicy2, sys_get_mempolicy2)
+#endif
+//hjcho
 #undef __NR_syscalls
-#define __NR_syscalls 449
+#define __NR_syscalls 451
 
 /*
  * 32 bit systems traditionally used different

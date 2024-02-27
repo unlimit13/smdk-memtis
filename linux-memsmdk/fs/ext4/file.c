@@ -36,6 +36,8 @@
 #include "acl.h"
 #include "truncate.h"
 
+#include <linux/cleancache.h> //hjcho
+
 static bool ext4_dio_supported(struct inode *inode)
 {
 	if (IS_ENABLED(CONFIG_FS_ENCRYPTION) && IS_ENCRYPTED(inode))
@@ -599,10 +601,12 @@ out:
 		endbyte = offset + err - 1;
 		err = filemap_write_and_wait_range(iocb->ki_filp->f_mapping,
 						   offset, endbyte);
-		if (!err)
+		if (!err){
 			invalidate_mapping_pages(iocb->ki_filp->f_mapping,
 						 offset >> PAGE_SHIFT,
 						 endbyte >> PAGE_SHIFT);
+			cleancache_invalidate_inode(iocb->ki_filp->f_mapping); //hjcho
+		}
 	}
 
 	return ret;

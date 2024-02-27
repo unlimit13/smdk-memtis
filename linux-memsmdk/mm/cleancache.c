@@ -30,7 +30,8 @@ static const struct cleancache_ops *cleancache_ops __read_mostly;
  */
 static u64 cleancache_succ_gets;
 static u64 cleancache_failed_gets;
-static u64 cleancache_puts;
+static u64 cleancache_succ_puts;
+static u64 cleancache_failed_puts;
 static u64 cleancache_invalidates;
 
 static void cleancache_register_ops_sb(struct super_block *sb, void *unused)
@@ -178,18 +179,17 @@ int __cleancache_get_page(struct page *page)
 	int ret = -1;
 	int pool_id;
 	struct cleancache_filekey key = { .u.key = { 0 } };
+	struct address_space *mapping = page->mapping;
 
-	if (!cleancache_ops) {
-		cleancache_failed_gets++;
-		goto out;
-	}
-
+	VM_BUG_ON(!cleancache_ops);
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
-	pool_id = page->mapping->host->i_sb->cleancache_poolid;
+	VM_BUG_ON(!mapping);
+
+	pool_id = mapping->host->i_sb->cleancache_poolid;
 	if (pool_id < 0)
 		goto out;
 
-	if (cleancache_get_key(page->mapping->host, &key) < 0)
+	if (cleancache_get_key(mapping->host, &key) < 0)
 		goto out;
 
 	ret = cleancache_ops->get_page(pool_id, key, page->index, page);
@@ -214,20 +214,23 @@ EXPORT_SYMBOL(__cleancache_get_page);
  */
 void __cleancache_put_page(struct page *page)
 {
+	int ret = -1;
 	int pool_id;
 	struct cleancache_filekey key = { .u.key = { 0 } };
+	struct address_space *mapping = page->mapping;
 
-	if (!cleancache_ops) {
-		cleancache_puts++;
-		return;
-	}
-
+	VM_BUG_ON(!cleancache_ops);
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
-	pool_id = page->mapping->host->i_sb->cleancache_poolid;
+	VM_BUG_ON(!mapping);
+	pool_id = mapping->host->i_sb->cleancache_poolid;
+
 	if (pool_id >= 0 &&
-		cleancache_get_key(page->mapping->host, &key) >= 0) {
-		cleancache_ops->put_page(pool_id, key, page->index, page);
-		cleancache_puts++;
+		cleancache_get_key(mapping->host, &key) >= 0) {
+		ret = cleancache_ops->put_page(pool_id, key, page->index, page);
+		if (ret == 0)
+			cleancache_succ_puts++;
+		else
+			cleancache_failed_puts++;
 	}
 }
 EXPORT_SYMBOL(__cleancache_put_page);
@@ -243,12 +246,14 @@ EXPORT_SYMBOL(__cleancache_put_page);
 void __cleancache_invalidate_page(struct address_space *mapping,
 					struct page *page)
 {
-	/* careful... page->mapping is NULL sometimes when this is called */
-	int pool_id = mapping->host->i_sb->cleancache_poolid;
+	int pool_id;
 	struct cleancache_filekey key = { .u.key = { 0 } };
 
-	if (!cleancache_ops)
-		return;
+	/* careful... page->mapping is NULL sometimes when this is called */
+	VM_BUG_ON(!mapping);
+	VM_BUG_ON(!cleancache_ops);
+
+	pool_id = mapping->host->i_sb->cleancache_poolid;
 
 	if (pool_id >= 0) {
 		VM_BUG_ON_PAGE(!PageLocked(page), page);
@@ -275,8 +280,7 @@ void __cleancache_invalidate_inode(struct address_space *mapping)
 	int pool_id = mapping->host->i_sb->cleancache_poolid;
 	struct cleancache_filekey key = { .u.key = { 0 } };
 
-	if (!cleancache_ops)
-		return;
+	VM_BUG_ON(!cleancache_ops);
 
 	if (pool_id >= 0 && cleancache_get_key(mapping->host, &key) >= 0)
 		cleancache_ops->invalidate_inode(pool_id, key);
@@ -293,10 +297,11 @@ void __cleancache_invalidate_fs(struct super_block *sb)
 	int pool_id;
 
 	pool_id = sb->cleancache_poolid;
-	sb->cleancache_poolid = CLEANCACHE_NO_POOL;
 
-	if (cleancache_ops && pool_id >= 0)
+	if (cleancache_ops && pool_id >= 0) {
+		sb->cleancache_poolid = CLEANCACHE_NO_POOL;
 		cleancache_ops->invalidate_fs(pool_id);
+	}
 }
 EXPORT_SYMBOL(__cleancache_invalidate_fs);
 
@@ -307,7 +312,8 @@ static int __init init_cleancache(void)
 
 	debugfs_create_u64("succ_gets", 0444, root, &cleancache_succ_gets);
 	debugfs_create_u64("failed_gets", 0444, root, &cleancache_failed_gets);
-	debugfs_create_u64("puts", 0444, root, &cleancache_puts);
+	debugfs_create_u64("succ_puts", 0444, root, &cleancache_succ_puts);
+	debugfs_create_u64("failed_puts", 0444, root, &cleancache_failed_puts);
 	debugfs_create_u64("invalidates", 0444, root, &cleancache_invalidates);
 #endif
 	return 0;
